@@ -90,6 +90,22 @@
 
     <div class="g3">
       <div>
+        <label>样式</label>
+        <select id="layout">
+          <option value="pill">胶囊（新版）</option>
+          <option value="classic">经典（方块列表）</option>
+        </select>
+      </div>
+      <div>
+        <label>风格方向</label>
+        <select id="style">
+          <option value="mixed">混搭（推荐）</option>
+          <option value="minimal">极简大标题</option>
+          <option value="magazine">杂志编辑</option>
+          <option value="geo">几何数据</option>
+        </select>
+      </div>
+      <div>
         <label>尺寸</label>
         <select id="ratio">
           <option value="1440">3:4（抖音图文）</option>
@@ -98,12 +114,19 @@
           <option value="1920">9:16（竖版长图）</option>
         </select>
       </div>
+    </div>
+
+    <div class="g3">
       <div>
         <label>行数</label>
         <select id="count">
           <option>3</option><option>4</option><option selected>5</option>
           <option>6</option><option>8</option>
         </select>
+      </div>
+      <div>
+        <label>顶部标签（可留空）</label>
+        <input id="tag" placeholder="比如 做图笔记">
       </div>
       <div>
         <label>品牌水印</label>
@@ -113,7 +136,7 @@
 
     <div id="items"></div>
 
-    <label>底部小字</label>
+    <label>底部文字（胶囊样式里是结论条）</label>
     <input id="footer">
 
     <div class="switch">
@@ -145,6 +168,23 @@ const THEMES = {
 
 const BLANK = ["", "", "", ""];
 
+const FONT_SANS = '"Microsoft YaHei","PingFang SC",sans-serif';
+const FONT_SERIF = '"SimSun","Songti SC","STSong",serif';
+
+// 三种风格方向（参考 banner-design 技能的 22 种艺术方向，挑了适合图文号的三种）
+const VARIANTS = {
+  mixed:    { titleSize: 82, font: "sans",  weight: "800",
+              tag: "pill",  capFill: "#FFFFFF", capLine: true,  badge: "circle", decor: "mix" },
+  minimal:  { titleSize: 84, font: "sans",  weight: "800",
+              tag: "pill",  capFill: "#FFFFFF", capLine: true,  badge: "circle", decor: "none" },
+  magazine: { titleSize: 76, font: "serif", weight: "700",
+              tag: "plain", capFill: null,      capLine: false, badge: "number", decor: "rule" },
+  geo:      { titleSize: 78, font: "sans",  weight: "800",
+              tag: "pill",  capFill: "#FFFFFF", capLine: false, badge: "square", decor: "shapes" }
+};
+
+function variant() { return VARIANTS[state.style] || VARIANTS.minimal; }
+
 function today() {
   const d = new Date(), p = n => String(n).padStart(2, "0");
   return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
@@ -164,14 +204,19 @@ function freshRows(n) {
 }
 
 let state = {
+  layout: "pill",
+  style: "mixed",
   title: "今日推荐",
   subtitle: today() + " · 每日更新",
-  theme: "dark",
+  theme: "light",
   ratio: "1440",
   count: 5,
-  footer: "数据来源：自填 · 每日更新",
+  tag: "做图笔记",
+  footer: "风格为内容服务，不是堆效果",
   brand: "",
   wm: false,
+  page: 0,
+  total: 0,
   rows: freshRows(5)
 };
 
@@ -191,11 +236,14 @@ function load() {
 
 // ---------- 表单 ----------
 function fillForm() {
+  document.getElementById("layout").value = state.layout || "pill";
+  document.getElementById("style").value = state.style || "mixed";
   document.getElementById("title").value = state.title;
   document.getElementById("subtitle").value = state.subtitle;
   document.getElementById("theme").value = state.theme;
   document.getElementById("ratio").value = state.ratio;
   document.getElementById("count").value = state.count;
+  document.getElementById("tag").value = state.tag || "";
   document.getElementById("footer").value = state.footer;
   document.getElementById("brand").value = state.brand;
   document.getElementById("wm").checked = !!state.wm;
@@ -251,6 +299,280 @@ function wrap(ctx, text, maxW) {
   return lines;
 }
 
+// ---------- 颜色工具 ----------
+function hex2rgb(h) {
+  h = String(h).replace("#", "");
+  if (h.length === 3) h = h.split("").map(c => c + c).join("");
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+function rgb2hex(a) {
+  return "#" + a.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+}
+function mix(c1, c2, t) {
+  const a = hex2rgb(c1), b = hex2rgb(c2);
+  return rgb2hex(a.map((v, i) => v + (b[i] - v) * t));
+}
+function lum(c) {
+  const [r, g, b] = hex2rgb(c);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+function rgba(c, a) {
+  const [r, g, b] = hex2rgb(c);
+  return "rgba(" + r + "," + g + "," + b + "," + a + ")";
+}
+function star(ctx, cx, cy, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const ang = -Math.PI / 2 + i * Math.PI / 5;
+    const rr = (i % 2) ? r * 0.45 : r;
+    const x = cx + Math.cos(ang) * rr, y = cy + Math.sin(ang) * rr;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+function arrowDown(ctx, cx, y, size, color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(3, size * 0.14);
+  ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(cx, y); ctx.lineTo(cx, y + size * 0.72); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx - size * 0.32, y + size * 0.42);
+  ctx.lineTo(cx, y + size * 0.75);
+  ctx.lineTo(cx + size * 0.32, y + size * 0.42);
+  ctx.stroke();
+}
+
+// ---------- 胶囊样式 ----------
+function drawPill(ctx, H, t, FONT, px) {
+  const V = variant();
+  const TFONT = V.font === "serif" ? FONT_SERIF : FONT;
+  let accent = t.accent;
+  if (lum(accent) > 0.58) accent = mix(accent, "#000000", 0.36);
+  const ink = "#101426", sub = "#6B7280", line = mix("#FFFFFF", accent, 0.22);
+
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#FFFFFF");
+  g.addColorStop(1, mix("#FFFFFF", accent, 0.10));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  const rg = ctx.createRadialGradient(W * 0.88, H * 0.04, 0, W * 0.88, H * 0.04, W * 0.8);
+  rg.addColorStop(0, rgba(accent, 0.16));
+  rg.addColorStop(1, rgba(accent, 0));
+  ctx.fillStyle = rg;
+  ctx.fillRect(0, 0, W, H * 0.66);
+
+  if (V.decor === "shapes") {
+    ctx.globalAlpha = 0.09;
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(W * 1.02, H * 0.10, px(230), 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(W * -0.04, H * 0.92, px(160), 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+
+  const PAD = px(72);
+  let y = px(58);
+
+  if (state.tag) {
+    const fs0 = px(28);
+    if (V.tag === "plain") {
+      ctx.font = "600 " + fs0 + "px " + FONT;
+      ctx.fillStyle = ink;
+      ctx.fillText(state.tag, PAD, y);
+      const tw = ctx.measureText(state.tag).width;
+      ctx.fillStyle = accent;
+      ctx.fillRect(PAD, y + fs0 + px(10), tw, px(5));
+      y += fs0 + px(34);
+    } else {
+      ctx.font = "600 " + fs0 + "px " + FONT;
+      const tw = ctx.measureText(state.tag).width;
+      const ph = px(58), pw = tw + px(52);
+      ctx.fillStyle = accent;
+      roundRect(ctx, PAD, y, pw, ph, ph / 2);
+      ctx.fill();
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillText(state.tag, PAD + px(26), y + (ph - fs0) / 2);
+      y += ph + px(32);
+    }
+  } else {
+    y += px(12);
+  }
+
+  if (state.page && state.total) {
+    const s = String(state.page).padStart(2, "0") + "/" + String(state.total).padStart(2, "0");
+    const fs1 = px(26);
+    ctx.font = "600 " + fs1 + "px " + FONT;
+    const tw = ctx.measureText(s).width;
+    const ph = px(52), pw = tw + px(40);
+    ctx.fillStyle = "rgba(16,20,38,0.06)";
+    roundRect(ctx, W - PAD - pw, px(58), pw, ph, ph / 2);
+    ctx.fill();
+    ctx.fillStyle = sub;
+    ctx.fillText(s, W - PAD - pw + px(20), px(58) + (ph - fs1) / 2);
+  }
+
+  const tfs = px(V.titleSize);
+  const tlines = wrap(ctx, state.title || "标题", W - PAD * 2).slice(0, 2);
+  ctx.fillStyle = ink;
+  ctx.font = V.weight + " " + tfs + "px " + TFONT;
+  const tLead = Math.round(tfs * 1.18);
+  tlines.forEach((ln, i) => ctx.fillText(ln, PAD, y + i * tLead));
+  y += tlines.length * tLead + px(8);
+
+  if (state.subtitle) {
+    const sfs = px(30);
+    const slines = wrap(ctx, state.subtitle, W - PAD * 2).slice(0, 2);
+    ctx.fillStyle = sub;
+    ctx.font = "400 " + sfs + "px " + FONT;
+    slines.forEach((ln, i) => ctx.fillText(ln, PAD, y + i * px(44)));
+    y += slines.length * px(44);
+  }
+
+  if (V.decor === "rule" || V.decor === "mix") {
+    ctx.strokeStyle = line;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(PAD, y + px(20));
+    ctx.lineTo(W - PAD, y + px(20));
+    ctx.stroke();
+    y += px(34);
+  }
+
+  const rows = state.rows.filter(r => (r[0] || "").trim());
+  const n = Math.max(rows.length, 1);
+  const bottomLimit = H - px(state.footer ? 206 : 116);
+  const areaTop = y + px(36);
+  const slot = (bottomLimit - areaTop) / n;
+  const gap = Math.min(px(36), slot * 0.24);
+  const capH = slot - gap;
+
+  rows.forEach((r, i) => {
+    const cy = areaTop + i * slot;
+    const x = PAD, cw = W - PAD * 2;
+    const radius = V.capFill ? Math.min(capH / 2, px(42)) : 0;
+    if (V.capFill) {
+      ctx.fillStyle = V.capFill;
+      roundRect(ctx, x, cy, cw, capH, radius);
+      ctx.fill();
+    }
+    if (V.capLine) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = line;
+      ctx.stroke();
+    }
+    if (!V.capFill && !V.capLine) {
+      ctx.strokeStyle = line;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, cy + capH - px(4));
+      ctx.lineTo(x + cw, cy + capH - px(4));
+      ctx.stroke();
+    }
+
+    const d = Math.min(px(74), capH * 0.58);
+    const bcx = x + px(24) + d / 2, bcy = cy + capH / 2;
+    const nfs = Math.round(d * 0.46);
+    if (V.badge === "circle") {
+      ctx.fillStyle = accent;
+      ctx.beginPath(); ctx.arc(bcx, bcy, d / 2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#FFFFFF";
+    } else if (V.badge === "square") {
+      ctx.fillStyle = accent;
+      roundRect(ctx, bcx - d / 2, bcy - d / 2, d, d, px(20));
+      ctx.fill();
+      ctx.fillStyle = "#FFFFFF";
+    } else {
+      ctx.fillStyle = accent;
+    }
+    ctx.font = "700 " + nfs + "px " + FONT;
+    const nw = ctx.measureText(String(i + 1)).width;
+    ctx.fillText(String(i + 1), bcx - nw / 2, bcy - nfs / 2 + px(1));
+
+    const tx = bcx + d / 2 + px(26);
+    const hasValue = !!(r[1] || "").trim();
+    const rightW = hasValue ? px(190) : 0;
+    const nameFs = Math.min(px(42), Math.round(capH * 0.30));
+    const noteFs = Math.min(px(26), Math.round(capH * 0.20));
+    const textW = cw - (tx - x) - rightW - px(28);
+
+    const ty = cy + capH / 2 - (r[2] ? nameFs * 0.78 : nameFs * 0.5);
+    ctx.fillStyle = ink;
+    ctx.font = "700 " + nameFs + "px " + FONT;
+    ctx.fillText(wrap(ctx, r[0], textW)[0] || "", tx, ty);
+
+    if (r[2]) {
+      ctx.fillStyle = sub;
+      ctx.font = "400 " + noteFs + "px " + FONT;
+      const nl = wrap(ctx, r[2], textW);
+      ctx.fillText(nl[0], tx, ty + nameFs + px(12));
+      if (nl.length > 1 && capH > px(150)) {
+        ctx.fillText(nl[1], tx, ty + nameFs + px(12) + noteFs + px(8));
+      }
+    }
+
+    if (hasValue) {
+      const vfs = Math.min(px(42), Math.round(capH * 0.30));
+      ctx.fillStyle = accent;
+      ctx.font = "700 " + vfs + "px " + FONT;
+      const vw = ctx.measureText(r[1]).width;
+      ctx.fillText(r[1], x + cw - px(32) - vw, cy + capH / 2 - vfs / 2);
+    }
+
+    if ((r[3] || "").trim() && capH > px(185)) {
+      const efs = Math.min(px(25), Math.round(capH * 0.165));
+      ctx.fillStyle = accent;
+      ctx.font = "600 " + efs + "px " + FONT;
+      ctx.fillText(wrap(ctx, r[3], textW)[0], tx, cy + capH - px(26) - efs);
+    }
+
+    if (i < n - 1) {
+      arrowDown(ctx, W / 2, cy + capH + gap * 0.12, gap * 0.7, rgba(accent, 0.7));
+    }
+  });
+
+  if (state.footer) {
+    const bh = px(100);
+    const by = H - px(162);
+    ctx.fillStyle = accent;
+    roundRect(ctx, PAD, by, W - PAD * 2, bh, bh / 2);
+    ctx.fill();
+    const ccx = PAD + px(54), ccy = by + bh / 2, r0 = px(27);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.beginPath(); ctx.arc(ccx, ccy, r0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = accent;
+    star(ctx, ccx, ccy, r0 * 0.62);
+    const ffs = px(32);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "700 " + ffs + "px " + FONT;
+    ctx.fillText(wrap(ctx, state.footer, W - PAD * 2 - px(170))[0], ccx + r0 + px(22), by + (bh - ffs) / 2);
+  }
+
+  if (state.brand) {
+    const bfs = px(24);
+    ctx.fillStyle = sub;
+    ctx.font = "600 " + bfs + "px " + FONT;
+    const bw2 = ctx.measureText(state.brand).width;
+    ctx.fillText(state.brand, W - PAD - bw2, H - px(44));
+  }
+
+  if (state.wm) {
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(-Math.PI / 6);
+    ctx.globalAlpha = 0.32;
+    ctx.fillStyle = "#FF4646";
+    ctx.font = "700 " + px(104) + "px " + FONT;
+    ctx.textAlign = "center";
+    ctx.fillText("示例数据 · 请替换", 0, -px(50));
+    ctx.restore();
+    ctx.textAlign = "left";
+  }
+}
+
 function render() {
   const t = THEMES[state.theme] || THEMES.dark;
   const cv = document.getElementById("cv");
@@ -262,6 +584,12 @@ function render() {
   const px = n => Math.round(n * k);
 
   ctx.clearRect(0, 0, W, H);
+
+  if ((state.layout || "pill") === "pill") {
+    drawPill(ctx, H, t, FONT, px);
+    return;
+  }
+
   ctx.fillStyle = t.bg;
   ctx.fillRect(0, 0, W, H);
   ctx.textBaseline = "top";
@@ -381,12 +709,12 @@ function render() {
 function refresh() { save(); render(); }
 
 // ---------- 绑定 ----------
-["title", "subtitle", "footer", "brand"].forEach(id => {
+["title", "subtitle", "footer", "brand", "tag"].forEach(id => {
   document.getElementById(id).addEventListener("input", e => {
     state[id] = e.target.value; refresh();
   });
 });
-["theme", "ratio", "wm"].forEach(id => {
+["theme", "ratio", "wm", "layout", "style"].forEach(id => {
   document.getElementById(id).addEventListener("change", e => {
     state[id] = (e.target.type === "checkbox") ? e.target.checked : e.target.value;
     refresh();
@@ -410,9 +738,12 @@ document.getElementById("save").addEventListener("click", () => {
 document.getElementById("reset").addEventListener("click", () => {
   if (!confirm("清空当前内容，重新填？")) return;
   state = {
+    layout: "pill",
+    style: "mixed",
     title: "今日推荐", subtitle: today() + " · 每日更新",
-    theme: "dark", ratio: "1440", count: 5,
-    footer: "数据来源：自填 · 每日更新", brand: "", wm: false,
+    theme: "light", ratio: "1440", count: 5,
+    tag: "做图笔记", footer: "风格为内容服务，不是堆效果",
+    brand: "", wm: false, page: 0, total: 0,
     rows: freshRows(5)
   };
   fillForm(); buildInputs(); refresh();
