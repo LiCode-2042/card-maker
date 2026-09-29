@@ -267,9 +267,12 @@ function render() {
   ctx.textBaseline = "top";
   ctx.textAlign = "left";
 
+  // 标题左侧竖条
+  ctx.fillStyle = t.accent;
+  ctx.fillRect(60, px(84), 10, px(58));
   ctx.fillStyle = t.text;
   ctx.font = "700 " + px(64) + "px " + FONT;
-  ctx.fillText(state.title || "标题", 60, px(78));
+  ctx.fillText(state.title || "标题", 90, px(78));
 
   if (state.subtitle) {
     ctx.fillStyle = t.accent;
@@ -298,13 +301,27 @@ function render() {
     roundRect(ctx, 50, y, W - 100, cardH, 18);
     ctx.fill();
 
+    // 卡片左侧色条
     ctx.fillStyle = t.accent;
-    ctx.font = "700 " + fs(px(38)) + "px " + FONT;
-    ctx.fillText(String(i + 1), 84, y + rowH * 0.20);
+    ctx.fillRect(50, y + px(18), px(10), Math.max(px(20), cardH - px(36)));
+
+    // 序号做成徽章
+    const bw = px(54), bh = px(54);
+    const bx = 82, by = y + rowH * 0.13;
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = t.accent;
+    roundRect(ctx, bx, by, bw, bh, px(15));
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    const nfs = fs(px(32));
+    ctx.fillStyle = t.accent;
+    ctx.font = "700 " + nfs + "px " + FONT;
+    const nw = ctx.measureText(String(i + 1)).width;
+    ctx.fillText(String(i + 1), bx + (bw - nw) / 2, by + (bh - nfs) / 2 + px(3));
 
     ctx.fillStyle = t.text;
     ctx.font = "700 " + fs(px(42)) + "px " + FONT;
-    ctx.fillText(r[0], 140, y + rowH * 0.16);
+    ctx.fillText(r[0], 154, y + rowH * 0.16);
 
     if (r[1]) {
       ctx.fillStyle = t.accent;
@@ -316,17 +333,23 @@ function render() {
     if (r[2]) {
       ctx.fillStyle = t.sub;
       ctx.font = "400 " + fs(px(26)) + "px " + FONT;
-      wrap(ctx, r[2], W - 250).slice(0, showExtra ? 2 : 1).forEach((ln, j) => {
-        ctx.fillText(ln, 140, y + rowH * 0.46 + j * fs(px(34)));
+      wrap(ctx, r[2], W - 264).slice(0, showExtra ? 2 : 1).forEach((ln, j) => {
+        ctx.fillText(ln, 154, y + rowH * 0.46 + j * fs(px(34)));
       });
     }
 
     if (showExtra && r[3]) {
       ctx.fillStyle = t.extra;
       ctx.font = "400 " + fs(px(24)) + "px " + FONT;
-      ctx.fillText(r[3], 140, y + rowH * 0.76);
+      ctx.fillText(r[3], 154, y + rowH * 0.76);
     }
   });
+
+  // 底部色带
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = t.accent;
+  ctx.fillRect(0, H - px(10), W, px(10));
+  ctx.globalAlpha = 1;
 
   if (state.footer) {
     ctx.fillStyle = t.sub;
