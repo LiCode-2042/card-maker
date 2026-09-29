@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>图文卡片生成器</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    background: #f2f4f8; color: #1c2333;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .tip { color: #6b7688; font-size: 13px; margin-bottom: 20px; }
+  .wrap { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+  .panel {
+    background: #fff; border-radius: 14px; padding: 18px;
+    box-shadow: 0 2px 12px rgba(20,30,60,.08);
+  }
+  .left { width: 460px; }
+  .right { flex: 1; min-width: 320px; text-align: center; }
+  label { display: block; font-size: 12px; color: #6b7688; margin: 10px 0 4px; }
+  input, select, textarea {
+    width: 100%; padding: 8px 10px; font-size: 14px;
+    border: 1px solid #d8dee9; border-radius: 8px;
+    font-family: inherit; background: #fbfcfe;
+  }
+  input:focus, select:focus { outline: 2px solid #4c8dff33; border-color: #4c8dff; }
+  .row { display: grid; grid-template-columns: 1fr 74px; gap: 8px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .item {
+    border: 1px solid #e6eaf2; border-radius: 10px;
+    padding: 8px 10px 12px; margin-bottom: 10px; background: #fafbfe;
+  }
+  .item b { font-size: 12px; color: #4c8dff; }
+  canvas { width: 100%; max-width: 420px; border-radius: 12px; box-shadow: 0 6px 24px rgba(20,30,60,.16); }
+  button {
+    margin-top: 16px; width: 100%; padding: 13px; font-size: 16px;
+    border: 0; border-radius: 10px; background: #1f6fff; color: #fff;
+    font-weight: 700; cursor: pointer;
+  }
+  button:hover { background: #0f5ce8; }
+  .switch { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: #6b7688; }
+  .switch input { width: auto; }
+</style>
+</head>
+<body>
+
+<h1>图文卡片生成器</h1>
+<div class="tip">左边改内容，右边实时出图。满意了点下面按钮下载，直接发抖音/小红书。</div>
+
+<div class="wrap">
+  <div class="panel left">
+    <label>标题</label>
+    <input id="title" value="今日推荐">
+
+    <div class="row2">
+      <div>
+        <label>副标题</label>
+        <input id="subtitle" value="">
+      </div>
+      <div>
+        <label>配色</label>
+        <select id="theme">
+          <option value="dark">深蓝 · 金色</option>
+          <option value="ink">纯黑 · 青色</option>
+          <option value="light">白底 · 简约</option>
+          <option value="warm">暖橙 · 活力</option>
+          <option value="pink">浅粉 · 少女</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="items"></div>
+
+    <label>底部小字</label>
+    <input id="footer" value="数据来源：自填 · 每日更新">
+
+    <div class="switch">
+      <input type="checkbox" id="wm">
+      <label for="wm" style="margin:0">加"示例数据"水印（预览时防误发）</label>
+    </div>
+
+    <button id="save">下载图片（1080×1440）</button>
+  </div>
+
+  <div class="panel right">
+    <canvas id="cv" width="1080" height="1440"></canvas>
+  </div>
+</div>
+
+<script>
+const W = 1080, H = 1440, MAXROWS = 5;
+
+const THEMES = {
+  dark:  { bg:"#0B1020", card:"#141B30", accent:"#FFC940", text:"#F0F4FF", sub:"#96A2BE", line:"#2C3758", extra:"#33E0FF" },
+  ink:   { bg:"#0A0A0C", card:"#16161A", accent:"#33E0FF", text:"#F5F7FA", sub:"#8E93A3", line:"#2A2A32", extra:"#7CF7B0" },
+  light: { bg:"#FFFFFF", card:"#F4F6FA", accent:"#1F6FFF", text:"#141A28", sub:"#77808F", line:"#E2E7F0", extra:"#D9480F" },
+  warm:  { bg:"#1A0F08", card:"#2A1A0E", accent:"#FF8A3D", text:"#FFF6EE", sub:"#C69C82", line:"#45291A", extra:"#FFD166" },
+  pink:  { bg:"#FFF5F8", card:"#FFFFFF", accent:"#FF4D8D", text:"#2A1520", sub:"#A0808C", line:"#FFD9E5", extra:"#7A5AF8" }
+};
+
+const DEFAULTS = [
+  ["第 1 个", "9.9", "一句话说清它好在哪", "备注：补充说明"],
+  ["第 2 个", "9.5", "一句话说清它好在哪", ""],
+  ["第 3 个", "9.2", "一句话说清它好在哪", ""],
+  ["第 4 个", "8.8", "一句话说清它好在哪", ""],
+  ["第 5 个", "8.5", "一句话说清它好在哪", ""]
+];
+
+function today() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
+function buildInputs() {
+  const box = document.getElementById("items");
+  box.innerHTML = "";
+  DEFAULTS.forEach((d, i) => {
+    const el = document.createElement("div");
+    el.className = "item";
+    el.innerHTML =
+      '<b>第 ' + (i + 1) + ' 行</b>' +
+      '<div class="row"><input class="f-name" placeholder="名称" value="' + d[0] + '">' +
+      '<input class="f-value" placeholder="数值" value="' + d[1] + '"></div>' +
+      '<label>点评</label><input class="f-note" value="' + d[2] + '">' +
+      '<label>备注（可留空）</label><input class="f-extra" value="' + d[3] + '">';
+    box.appendChild(el);
+  });
+  box.querySelectorAll("input").forEach(i => i.addEventListener("input", render));
+}
+
+function readRows() {
+  return [...document.querySelectorAll("#items .item")].map(el => ({
+    name:  el.querySelector(".f-name").value.trim(),
+    value: el.querySelector(".f-value").value.trim(),
+    note:  el.querySelector(".f-note").value.trim(),
+    extra: el.querySelector(".f-extra").value.trim()
+  })).filter(r => r.name);
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function wrap(ctx, text, maxW) {
+  const lines = [];
+  let cur = "";
+  for (const ch of text) {
+    if (ctx.measureText(cur + ch).width <= maxW) cur += ch;
+    else { lines.push(cur); cur = ch; }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+function render() {
+  const t = THEMES[document.getElementById("theme").value];
+  const cv = document.getElementById("cv");
+  const ctx = cv.getContext("2d");
+  const rows = readRows();
+  const title = document.getElementById("title").value.trim() || "标题";
+  const sub = document.getElementById("subtitle").value.trim();
+  const footer = document.getElementById("footer").value.trim();
+  const FONT = '"Microsoft YaHei","PingFang SC",sans-serif';
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = t.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textBaseline = "top";
+  ctx.fillStyle = t.text;
+  ctx.font = "700 64px " + FONT;
+  ctx.fillText(title, 60, 78);
+
+  if (sub) {
+    ctx.fillStyle = t.accent;
+    ctx.font = "400 28px " + FONT;
+    ctx.fillText(sub, 60, 164);
+  }
+
+  ctx.strokeStyle = t.line;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(60, 222); ctx.lineTo(W - 60, 222); ctx.stroke();
+
+  const top = 262, rowH = 216, n = Math.max(rows.length, 1);
+  rows.forEach((r, i) => {
+    const y = top + i * rowH;
+    ctx.fillStyle = t.card;
+    roundRect(ctx, 50, y, W - 100, rowH - 24, 18);
+    ctx.fill();
+
+    ctx.fillStyle = t.accent;
+    ctx.font = "700 38px " + FONT;
+    ctx.fillText(String(i + 1), 84, y + 42);
+
+    ctx.fillStyle = t.text;
+    ctx.font = "700 42px " + FONT;
+    ctx.fillText(r.name, 140, y + 34);
+
+    if (r.value) {
+      ctx.fillStyle = t.accent;
+      ctx.font = "700 50px " + FONT;
+      const w = ctx.measureText(r.value).width;
+      ctx.fillText(r.value, W - 84 - w, y + 30);
+    }
+
+    if (r.note) {
+      ctx.fillStyle = t.sub;
+      ctx.font = "400 26px " + FONT;
+      wrap(ctx, r.note, W - 250).slice(0, 2).forEach((ln, j) => {
+        ctx.fillText(ln, 140, y + 94 + j * 34);
+      });
+    }
+
+    if (r.extra) {
+      ctx.fillStyle = t.extra;
+      ctx.font = "400 24px " + FONT;
+      ctx.fillText(r.extra, 140, y + 156);
+    }
+  });
+
+  if (footer) {
+    ctx.fillStyle = t.sub;
+    ctx.font = "400 22px " + FONT;
+    ctx.fillText(footer, 60, H - 66);
+  }
+
+  if (document.getElementById("wm").checked) {
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(-Math.PI / 6);
+    ctx.globalAlpha = 0.42;
+    ctx.fillStyle = "#FF4646";
+    ctx.font = "700 104px " + FONT;
+    ctx.textAlign = "center";
+    ctx.fillText("示例数据 · 请替换", 0, -52);
+    ctx.restore();
+    ctx.textAlign = "left";
+  }
+}
+
+document.getElementById("save").addEventListener("click", () => {
+  const a = document.createElement("a");
+  a.download = "卡片-" + today() + ".png";
+  a.href = document.getElementById("cv").toDataURL("image/png");
+  a.click();
+});
+
+["title", "subtitle", "footer", "theme", "wm"].forEach(id => {
+  document.getElementById(id).addEventListener("input", render);
+  document.getElementById(id).addEventListener("change", render);
+});
+
+document.getElementById("subtitle").value = today() + " · 每日更新";
+buildInputs();
+render();
+</script>
+
+</body>
+</html>
